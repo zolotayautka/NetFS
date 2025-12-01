@@ -38,7 +38,6 @@ type Node struct {
 	IsDir     bool      `gorm:"not null" json:"is_dir"`
 	OyaID     *uint     `gorm:"index" json:"oya_id,omitempty"`
 	Ko        []Node    `gorm:"foreignKey:OyaID;references:ID;constraint:OnDelete:CASCADE" json:"ko,omitempty"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 	Size      int64     `gorm:"-" json:"size,omitempty"`
 	Path      string    `gorm:"-" json:"path,omitempty"`
