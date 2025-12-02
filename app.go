@@ -629,12 +629,6 @@ func DlFile(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"success":true}`))
 }
 
-func indexHtml(w http.ResponseWriter, r *http.Request) {
-	// serve embedded HTML
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(indexHtmlContent))
-}
-
 //go:embed index.html
 var indexHtmlContent string
 
@@ -669,7 +663,10 @@ func main() {
 	http.HandleFunc("/move", MvFile)
 	http.HandleFunc("/rename", RnFile)
 	http.HandleFunc("/delete", DlFile)
-	http.HandleFunc("/", indexHtml)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(indexHtmlContent))
+	})
 	http.HandleFunc("/index.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js_script))
