@@ -638,6 +638,9 @@ func indexHtml(w http.ResponseWriter, r *http.Request) {
 //go:embed index.html
 var indexHtmlContent string
 
+//go:embed index.js
+var js_script string
+
 func main() {
 	var err error
 	db, err = gorm.Open(sqlite.Open(dbFile), &gorm.Config{})
@@ -667,6 +670,10 @@ func main() {
 	http.HandleFunc("/rename", RnFile)
 	http.HandleFunc("/delete", DlFile)
 	http.HandleFunc("/", indexHtml)
+	http.HandleFunc("/index.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(js_script))
+	})
 	fmt.Printf("%s server started at :8080\n", programName)
 	http.ListenAndServe(":8080", nil)
 }
