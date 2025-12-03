@@ -159,14 +159,28 @@
       fd.append('file', file);
       try{
         const res = await fetch('/upload', { method:'POST', body:fd });
-        if(!res.ok) throw new Error('HTTP '+res.status);
+        if(!res.ok) {
+          const errText = await res.text();
+          if(res.status === 409) {
+            throw new Error('folder_exists');
+          }
+          throw new Error('HTTP '+res.status);
+        }
         const j = await res.json();
         status.innerText = t('uploadSuccess') + ': ' + (j.name || '');
         loadNode(currentNode && currentNode.id ? currentNode.id : undefined);
         bar.style.width = '100%'; pct.innerText='100%';
         setTimeout(()=>{ if(es) es.close(); closeModal(); }, 600);
         return;
-      }catch(e){ alert(t('uploadFailed') + ': ' + e.message); if(es) es.close(); }
+      }catch(e){ 
+        if(es) es.close();
+        const msg = e.message || '';
+        if(msg.includes('folder_exists')) {
+          alert(t('folderExists'));
+        } else {
+          alert(t('uploadFailed') + ': ' + e.message);
+        }
+      }
       uploading = false;
       startBtn.disabled = false;
       fileInputEl.disabled = false;

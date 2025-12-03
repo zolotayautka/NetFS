@@ -112,10 +112,14 @@ func UploadNode(filename string, data []byte, isDir bool, oyaID *uint) (uint, er
 			return newNode.ID, nil
 		}
 		if existing.IsDir {
-			return 0, fmt.Errorf("cannot upload file: directory with same name exists")
+			return 0, fmt.Errorf("folder_exists")
 		}
 		if !UpdateNode(existing.Fid, data) {
 			return 0, fmt.Errorf("failed to update existing node")
+		}
+		existing.UpdatedAt = time.Now()
+		if err := db.Save(&existing).Error; err != nil {
+			return 0, fmt.Errorf("failed to update timestamp: %w", err)
 		}
 		return existing.ID, nil
 	}
@@ -465,7 +469,11 @@ func UpFile(w http.ResponseWriter, r *http.Request) {
 	}
 	nodeID, err := UploadNode(filename, data, isDir, oyaPtr)
 	if err != nil {
-		http.Error(w, "failed to upload node: "+err.Error(), http.StatusInternalServerError)
+		if err.Error() == "folder_exists" {
+			http.Error(w, "folder_exists", http.StatusConflict)
+			return
+		}
+		http.Error(w, "upload_error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if uploadID != "" {
