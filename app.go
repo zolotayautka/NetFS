@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	mrand "math/rand"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,18 +91,34 @@ func UploadFile(data []byte) (uint, error) {
 	return filename, nil
 }
 
-func exists(name string, nodes []Node) (bool, *uint) {
-	for _, n := range nodes {
-		if n.Name == name {
-			return true, n.Fid
-		}
-	}
-	return false, nil
-}
-
 func UploadNode(filename string, data []byte, isDir bool, oyaID *uint) (uint, error) {
-	var oya Node
-	db.Preload("Ko").First(&oya, oyaID)
+	var existing Node
+	if err := db.First(&existing, "name = ? AND oya_id = ?", filename, oyaID).Error; err == nil {
+		if isDir {
+			if existing.IsDir {
+				return existing.ID, nil
+			}
+			if err := DeleteNodeRecursive(existing.ID); err != nil {
+				return 0, err
+			}
+			newNode := Node{
+				Name:  filename,
+				IsDir: true,
+				OyaID: oyaID,
+			}
+			if res := db.Create(&newNode); res.Error != nil {
+				return 0, res.Error
+			}
+			return newNode.ID, nil
+		}
+		if existing.IsDir {
+			return 0, fmt.Errorf("cannot upload file: directory with same name exists")
+		}
+		if !UpdateNode(existing.Fid, data) {
+			return 0, fmt.Errorf("failed to update existing node")
+		}
+		return existing.ID, nil
+	}
 	if isDir {
 		newNode := Node{
 			Name:  filename,
@@ -113,35 +131,28 @@ func UploadNode(filename string, data []byte, isDir bool, oyaID *uint) (uint, er
 		}
 		return newNode.ID, nil
 	}
-	exist, fid := exists(filename, oya.Ko)
-	if !exist {
-		fid, err := UploadFile(data)
-		if err != nil {
-			return 0, err
-		}
-		newNode := Node{
-			Fid:   &fid,
-			Name:  filename,
-			IsDir: false,
-			OyaID: oyaID,
-		}
-		result := db.Create(&newNode)
-		if result.Error != nil {
-			return 0, result.Error
-		}
-		return newNode.ID, nil
+	fid, err := UploadFile(data)
+	if err != nil {
+		return 0, err
 	}
-	updated := UpdateNode(fid, data)
-	if !updated {
-		return 0, fmt.Errorf("failed to update existing node")
+	newNode := Node{
+		Fid:   &fid,
+		Name:  filename,
+		IsDir: false,
+		OyaID: oyaID,
 	}
-	var existing Node
-	db.First(&existing, "fid = ? AND oya_id = ?", fid, oyaID)
-	return existing.ID, nil
+	result := db.Create(&newNode)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return newNode.ID, nil
 }
 
 func UpdateNode(fid *uint, data []byte) bool {
-	filepath := fmt.Sprintf("%s/%d", dataDir, fid)
+	if fid == nil {
+		return false
+	}
+	filepath := fmt.Sprintf("%s/%d", dataDir, *fid)
 	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return false
@@ -313,10 +324,35 @@ func GetFile(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(idStr)
 	var node Node
 	db.First(&node, id)
-	data := node.return_file()
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", node.Name))
-	w.Write(data)
+	if node.Fid == nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	p := fmt.Sprintf("%s/%d", dataDir, *node.Fid)
+	f, err := os.Open(p)
+	if err != nil {
+		http.Error(w, "failed to open file", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		http.Error(w, "failed to stat file", http.StatusInternalServerError)
+		return
+	}
+	ext := strings.ToLower("." + strings.TrimPrefix(strings.TrimPrefix(filepath.Ext(node.Name), "."), "."))
+	ctype := mime.TypeByExtension(ext)
+	if ctype == "" {
+		ctype = "application/octet-stream"
+	}
+	inline := r.URL.Query().Get("inline")
+	if inline == "1" || inline == "true" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", node.Name))
+	} else {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", node.Name))
+	}
+	w.Header().Set("Content-Type", ctype)
+	http.ServeContent(w, r, node.Name, fi.ModTime(), f)
 }
 
 func UpFile(w http.ResponseWriter, r *http.Request) {
@@ -635,6 +671,9 @@ var indexHtmlContent string
 //go:embed index.js
 var js_script string
 
+//go:embed i18n.js
+var i18n_script string
+
 func main() {
 	var err error
 	db, err = gorm.Open(sqlite.Open(dbFile), &gorm.Config{})
@@ -670,6 +709,10 @@ func main() {
 	http.HandleFunc("/index.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js_script))
+	})
+	http.HandleFunc("/i18n.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(i18n_script))
 	})
 	fmt.Printf("%s server started at :8080\n", programName)
 	http.ListenAndServe(":8080", nil)
