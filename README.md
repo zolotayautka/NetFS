@@ -25,7 +25,7 @@ A lightweight, self-contained file management system with a web interface. Uploa
 ### Build from source
 
 ```bash
-git clone https://github.com/yourusername/NetFS.git
+git clone https://github.com/zolotayautka/NetFS.git
 cd NetFS
 go build
 ```
